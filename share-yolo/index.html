@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bird-ID Live Detection (Codec Copy)</title>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #000;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            color: #fff;
+            overflow: hidden;
+        }
+        #container {
+            position: relative;
+            width: 100vw;
+            height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        video {
+            max-width: 100%;
+            max-height: 100%;
+            display: block;
+        }
+        #overlay {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+        #stats {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px 15px;
+            border-radius: 5px;
+            font-size: 14px;
+            z-index: 10;
+        }
+        .stat-label {
+            color: #0f0;
+            font-weight: bold;
+        }
+        #header {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 10px 15px;
+            border-radius: 5px;
+            font-size: 14px;
+            z-index: 10;
+        }
+        .quality-indicator {
+            color: #0f0;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div id="container">
+        <video id="video" autoplay muted playsinline></video>
+        <canvas id="overlay"></canvas>
+        <div id="stats">
+            <div><span class="stat-label">Detections:</span> <span id="det-count">0</span></div>
+            <div><span class="stat-label">Last Update:</span> <span id="last-update">Never</span></div>
+        </div>
+        <div id="header">
+            <div><span class="quality-indicator">CODEC COPY</span> - No Re-encode</div>
+            <div style="font-size: 12px; color: #888;">Crystal Clear Quality</div>
+        </div>
+    </div>
+
+    <script>
+    const video = document.getElementById('video');
+    const overlay = document.getElementById('overlay');
+    const ctx = overlay.getContext('2d');
+    const detCountEl = document.getElementById('det-count');
+    const lastUpdateEl = document.getElementById('last-update');
+
+    // HLS setup
+    if (Hls.isSupported()) {
+        const hls = new Hls({
+            liveSyncDurationCount: 3,
+            liveMaxLatencyDurationCount: 10,
+            manifestLoadingTimeOut: 10000,
+            manifestLoadingMaxRetry: 4,
+            levelLoadingTimeOut: 10000,
+            levelLoadingMaxRetry: 4,
+            fragLoadingTimeOut: 20000,
+            fragLoadingMaxRetry: 6
+        });
+
+        hls.loadSource('/hls/birdid.m3u8');
+        hls.attachMedia(video);
+
+        hls.on(Hls.Events.ERROR, function(event, data) {
+            if (data.fatal) {
+                switch(data.type) {
+                    case Hls.ErrorTypes.NETWORK_ERROR:
+                        console.error('Fatal network error, attempting to recover');
+                        hls.startLoad();
+                        break;
+                    case Hls.ErrorTypes.MEDIA_ERROR:
+                        console.error('Fatal media error, attempting to recover');
+                        hls.recoverMediaError();
+                        break;
+                    default:
+                        console.error('Fatal error, cannot recover');
+                        hls.destroy();
+                        break;
+                }
+            }
+        });
+    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        // Native HLS support (Safari)
+        video.src = '/hls/birdid.m3u8';
+    }
+
+    // Resize canvas to match video
+    function resizeCanvas() {
+        if (video.videoWidth > 0 && video.videoHeight > 0) {
+            overlay.width = video.videoWidth;
+            overlay.height = video.videoHeight;
+
+            // Match video element size and position
+            const rect = video.getBoundingClientRect();
+            overlay.style.width = rect.width + 'px';
+            overlay.style.height = rect.height + 'px';
+        }
+    }
+
+    video.addEventListener('loadedmetadata', resizeCanvas);
+    video.addEventListener('resize', resizeCanvas);
+    window.addEventListener('resize', resizeCanvas);
+
+    // Fetch and draw detections
+    let lastDetections = [];
+
+    async function updateDetections() {
+        try {
+            const resp = await fetch('/detections.json?t=' + Date.now());
+            const data = await resp.json();
+
+            // Clear canvas
+            ctx.clearRect(0, 0, overlay.width, overlay.height);
+
+            if (data.detections && data.detections.length > 0) {
+                lastDetections = data.detections;
+
+                data.detections.forEach(det => {
+                    // Scale coordinates if needed (detection is on 1920x1080, video might be different)
+                    const scaleX = overlay.width / 1920;
+                    const scaleY = overlay.height / 1080;
+
+                    const x = det.x * scaleX;
+                    const y = det.y * scaleY;
+                    const w = det.w * scaleX;
+                    const h = det.h * scaleY;
+
+                    // Draw box
+                    ctx.strokeStyle = '#0f0';
+                    ctx.lineWidth = 3;
+                    ctx.strokeRect(x, y, w, h);
+
+                    // Draw label
+                    const label = det.confidence > 0
+                        ? `${det.label} (${(det.confidence * 100).toFixed(0)}%)`
+                        : det.label;
+
+                    ctx.font = 'bold 20px Arial';
+                    const metrics = ctx.measureText(label);
+
+                    // Label background
+                    ctx.fillStyle = 'rgba(0, 255, 0, 0.9)';
+                    ctx.fillRect(x, y - 30, metrics.width + 10, 30);
+
+                    // Label text
+                    ctx.fillStyle = '#000';
+                    ctx.fillText(label, x + 5, y - 8);
+                });
+
+                detCountEl.textContent = data.detections.length;
+                lastUpdateEl.textContent = new Date(data.timestamp * 1000).toLocaleTimeString();
+            } else {
+                lastDetections = [];
+                detCountEl.textContent = '0';
+            }
+        } catch (e) {
+            // JSON not ready yet or network error
+            console.debug('Detection fetch error:', e);
+        }
+    }
+
+    // Update detections every 200ms (5Hz)
+    setInterval(updateDetections, 200);
+
+    // Initial resize
+    setTimeout(resizeCanvas, 1000);
+    </script>
+</body>
+</html>
