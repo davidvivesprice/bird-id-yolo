@@ -65,8 +65,8 @@
 ### Step 1: Build the Docker Container
 
 ```bash
-cd /volume1/docker/bird-id-yolo
-sudo docker-compose -f docker-compose-yolo.yaml build
+cd /volume1/docker
+sudo docker-compose build birdid-yolo birdid-yolo-share
 ```
 
 **Expected**: 2-3 minutes to build, installs PyTorch, Ultralytics, OpenCV
@@ -74,7 +74,7 @@ sudo docker-compose -f docker-compose-yolo.yaml build
 ### Step 2: Start the Services
 
 ```bash
-sudo docker-compose -f docker-compose-yolo.yaml up -d
+sudo docker-compose up -d birdid-yolo birdid-yolo-share
 ```
 
 **Expected**: Starts birdid-yolo and birdid-yolo-share containers
@@ -107,6 +107,8 @@ watch -n 1 'cat /volume1/docker/bird-id-yolo/share-yolo/detections.json | python
 tail -f /volume1/docker/bird-id-yolo/logs-yolo/yolo_detection.log
 ```
 
+**Remember**: Access at `https://birdid-yolo.vivessyn.duckdns.org:9444` (port 9444!)
+
 **Expected when bird appears**:
 ```json
 {
@@ -127,9 +129,16 @@ tail -f /volume1/docker/bird-id-yolo/logs-yolo/yolo_detection.log
 
 ### Step 5: View Web Dashboard
 
-Open in browser: `https://birdid-yolo.vivessyn.duckdns.org`
+Open in browser: `https://birdid-yolo.vivessyn.duckdns.org:9444`
 
 **Expected**: Live HLS stream with green bounding boxes around detected birds
+
+### Step 6: Stop (when done testing)
+
+```bash
+cd /volume1/docker
+sudo docker-compose stop birdid-yolo birdid-yolo-share
+```
 
 ---
 
@@ -449,24 +458,24 @@ ping birdid-yolo.vivessyn.duckdns.org
 
 ```bash
 # Build
-cd /volume1/docker/bird-id-yolo
-sudo docker-compose -f docker-compose-yolo.yaml build
+cd /volume1/docker
+sudo docker-compose build birdid-yolo birdid-yolo-share
 
 # Start
-sudo docker-compose -f docker-compose-yolo.yaml up -d
+sudo docker-compose up -d birdid-yolo birdid-yolo-share
 
 # Monitor
 sudo docker logs -f birdid-yolo
 tail -f /volume1/docker/bird-id-yolo/logs-yolo/yolo_detection.log
 
 # Stop
-sudo docker-compose -f docker-compose-yolo.yaml down
+sudo docker-compose stop birdid-yolo birdid-yolo-share
 
 # View detections
 watch -n 1 'cat /volume1/docker/bird-id-yolo/share-yolo/detections.json | python3 -m json.tool'
 
-# Web dashboard
-open https://birdid-yolo.vivessyn.duckdns.org
+# Web dashboard (remember port 9444!)
+open https://birdid-yolo.vivessyn.duckdns.org:9444
 ```
 
 ---
