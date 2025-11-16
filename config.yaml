@@ -1,0 +1,151 @@
+# Bird-ID Configuration
+# Edit this file to tune detection parameters without changing code
+
+# Source Configuration
+# The system can use either RTSP streams (live camera) or video files (testing)
+# Source selection is controlled by runtime_config.json
+
+# RTSP Stream Configuration (for live camera)
+rtsp:
+  # Main stream: 1920x1080 @ 30fps - Use for high-quality clips/classification
+  main: "rtsp://192.168.4.9:7447/tTHjLZrVgopARpu6"
+
+  # Sub stream: Lower resolution @ 5fps - RECOMMENDED for motion detection
+  # Native 5fps = 6x faster processing, perfect for continuous monitoring
+  sub: "rtsp://192.168.4.9:7447/5CAx1qDdOe7zoLEQ"
+
+# Video File Configuration (for testing)
+# When in video mode, the same video is used for both detection and classification
+# Videos should be 640x360 or will be resized
+video:
+  # Base directory for test videos (using original clips since 360p conversion not complete)
+  clips_dir: "/data/clips"
+
+  # Default test video (can be overridden by runtime_config.json)
+  default: "chickadees/Birds 11-12-2025, 3.54.32pm EST - 11-12-2025, 3.54.37pm EST.mp4"
+
+# Motion Detection Parameters
+motion:
+  # Detection method: "frame_diff" (default) or "mog2" (better for outdoor)
+  method: "mog2"
+
+  # Region of Interest (ROI) - coordinates for bird feeder area
+  # Format: [[x1,y1], [x2,y2], [x3,y3], [x4,y4]]
+
+  # ROI for MAIN stream (1920x1080) - use for high-res clips
+  roi_main:
+    - [380, 425]
+    - [1550, 425]
+    - [1550, 960]
+    - [380, 960]
+
+  # ROI for SUB stream (640x360) - scaled down by 1/3 for motion detection
+  roi_sub:
+    - [127, 142]
+    - [517, 142]
+    - [517, 320]
+    - [127, 320]
+
+  # Default ROI (use roi_main for backward compatibility)
+  roi:
+    - [380, 425]
+    - [1550, 425]
+    - [1550, 960]
+    - [380, 960]
+
+  # Background subtraction history (frames to average)
+  # MOG2: More frames = better adaptation to slow changes
+  # Recommended: 500 for MOG2, 30 for frame_diff
+  history: 500
+
+  # Frame differencing threshold (lower = more sensitive)
+  # Only used when method = "frame_diff"
+  diff_threshold: 15
+
+  # MOG2 variance threshold (lower = more sensitive to motion)
+  # Typical range: 10-25, default: 16
+  # Only used when method = "mog2"
+  mog2_var_threshold: 16
+
+  # MOG2 shadow detection (reduces false positives from shadows)
+  # Recommended: true for outdoor cameras
+  # Only used when method = "mog2"
+  detect_shadows: true
+
+  # Frame skip: Process every Nth frame for performance
+  # 0 = process all frames (30fps)
+  # 5 = process every 6th frame (~5fps) - RECOMMENDED for continuous monitoring
+  # Reduces CPU by 6x with minimal detection loss
+  frame_skip: 5
+
+  # Minimum contour area to consider as motion (pixels)
+  min_area: 500
+
+  # Minimum consecutive frames with motion before triggering
+  min_consecutive_frames: 3
+
+# File Paths
+paths:
+  root: "/volume1/docker/bird-id"
+  data: "/volume1/docker/bird-id/data"
+  logs: "/volume1/docker/bird-id/logs"
+  debug: "/volume1/docker/bird-id/data/debug"
+  clips: "/volume1/docker/bird-id/data/clips"
+  events: "/volume1/docker/bird-id/data/events"
+
+# Logging Configuration
+logging:
+  level: "INFO"  # DEBUG, INFO, WARNING, ERROR
+  console: true
+  file: true
+  max_bytes: 10485760  # 10MB
+  backup_count: 5
+
+# Capture Settings
+capture:
+  # Default snapshot output location
+  snapshot_output: "/volume1/docker/bird-id/data/test/frame.jpg"
+
+  # Frame capture quality (1-100)
+  jpeg_quality: 95
+
+# Simple Detector Configuration
+# Snapshot-based detector with stable motion detection and deduplication
+simple_detector:
+  # Stable motion duration: How long motion must persist to trigger classification
+  # Lower = more sensitive (may catch birds flying through)
+  # Higher = more stable (only birds that land and stay)
+  # Recommended: 1.5 seconds
+  stable_motion_duration: 1.5
+
+  # Debounce: Pause after detection before checking for next bird
+  # Prevents overwhelming the classifier and logs
+  # Recommended: 3 seconds
+  debounce_seconds: 3
+
+  # Minimum confidence threshold for logging detections
+  # Only detections with confidence >= this value will be logged
+  # Range: 0.0 to 1.0
+  # Recommended: 0.7 (70%)
+  min_confidence: 0.7
+
+  # Deduplication window: Time window for considering same bird
+  # If same species detected within this window, it's the same bird visit
+  # Only log once per visit
+  # Recommended: 5 seconds
+  dedup_window_seconds: 5
+
+  # Save snapshots: Whether to save ROI snapshots for review/retraining
+  # Snapshots saved to: /data/detections/snapshots/
+  # Recommended: true (for first deployment, then can disable)
+  save_snapshots: true
+
+  # Maximum snapshots per species: Limit storage usage
+  # After this many snapshots, only log metadata
+  # Recommended: 10 per species
+  max_snapshots_per_species: 10
+
+  # Heartbeat interval: Log health status every N seconds
+  # Includes: frames processed, detections, errors, uptime
+  # Recommended: 300 (5 minutes)
+  heartbeat_interval: 300

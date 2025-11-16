@@ -1,0 +1,10 @@
+venv/
+data/
+logs/
+share/*
+!share/nginx.conf
+!share/index.html
+!share/nginx.conf
+!share/index.html
+*.pyc
+__pycache__/
