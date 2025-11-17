@@ -87,6 +87,10 @@ class YOLOBirdDetector:
                 # Get class name
                 class_name = result.names[cls_id]
 
+                # Only detect birds - filter out other classes
+                if class_name != "bird":
+                    continue
+
                 # Convert to detection format
                 detection = {
                     "x": int(x1),
@@ -143,25 +147,63 @@ def write_detections_json(detections: List[Dict], output_path: Path, frame_num: 
 
 def main():
     parser = argparse.ArgumentParser(description="YOLO Bird Detector")
-    parser.add_argument("--rtsp", required=True, help="RTSP stream URL")
+    parser.add_argument("--rtsp", help="RTSP stream URL")
+    parser.add_argument("--video", help="Video file path")
+    parser.add_argument("--loop", action="store_true", help="Loop video file continuously")
     parser.add_argument("--model", required=True, help="Path to YOLO model (.pt)")
     parser.add_argument("--output", default="/share-yolo/detections.json",
                        help="Output JSON file path")
     parser.add_argument("--confidence", type=float, default=0.5,
                        help="Minimum confidence threshold")
+    parser.add_argument("--resize-width", type=int, default=640,
+                       help="Resize frame width for detection (default: 640)")
+    parser.add_argument("--resize-height", type=int, default=360,
+                       help="Resize frame height for detection (default: 360)")
+    parser.add_argument("--roi", type=str, default=None,
+                       help="Region of Interest as 'x,y,w,h' (applied before resize)")
+    parser.add_argument("--skip-frames", type=int, default=15,
+                       help="Process every Nth frame (default: 15 for ~2 FPS on 30fps video)")
     parser.add_argument("--log-level", default="INFO",
                        choices=["DEBUG", "INFO", "WARNING", "ERROR"],
                        help="Logging level")
     args = parser.parse_args()
 
+    # Validate input source
+    if not args.rtsp and not args.video:
+        logger.error("Either --rtsp or --video must be specified")
+        return 1
+    if args.rtsp and args.video:
+        logger.error("Cannot specify both --rtsp and --video")
+        return 1
+
     # Set logging level
     logging.getLogger().setLevel(getattr(logging, args.log_level))
 
+    # Parse ROI if specified
+    roi = None
+    if args.roi:
+        try:
+            roi = tuple(map(int, args.roi.split(',')))
+            if len(roi) != 4:
+                raise ValueError("ROI must have 4 values: x,y,w,h")
+        except Exception as e:
+            logger.error(f"Invalid ROI format: {e}")
+            return 1
+
     logger.info("=== YOLO Bird Detection System ===")
-    logger.info(f"RTSP Stream: {args.rtsp}")
+    if args.rtsp:
+        logger.info(f"RTSP Stream: {args.rtsp}")
+        video_source = args.rtsp
+    else:
+        logger.info(f"Video File: {args.video} (loop={args.loop})")
+        video_source = args.video
     logger.info(f"Model: {args.model}")
     logger.info(f"Output: {args.output}")
     logger.info(f"Confidence Threshold: {args.confidence}")
+    logger.info(f"Processing Resolution: {args.resize_width}x{args.resize_height}")
+    logger.info(f"Frame Skip: Process every {args.skip_frames} frames")
+    if roi:
+        logger.info(f"ROI: x={roi[0]}, y={roi[1]}, w={roi[2]}, h={roi[3]}")
 
     # Initialize detector
     try:
@@ -171,14 +213,18 @@ def main():
         return 1
 
     # Open video stream
-    logger.info("Opening RTSP stream...")
-    cap = cv2.VideoCapture(args.rtsp, cv2.CAP_FFMPEG)
+    if args.rtsp:
+        logger.info("Opening RTSP stream...")
+        cap = cv2.VideoCapture(video_source, cv2.CAP_FFMPEG)
+    else:
+        logger.info("Opening video file...")
+        cap = cv2.VideoCapture(video_source)
 
     if not cap.isOpened():
-        logger.error("Failed to open RTSP stream")
+        logger.error(f"Failed to open video source: {video_source}")
         return 1
 
-    logger.info("Stream opened successfully")
+    logger.info("Video source opened successfully")
 
     # Get stream properties
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -202,16 +248,56 @@ def main():
         ret, frame = cap.read()
 
         if not ret:
-            logger.warning("Failed to read frame, reconnecting...")
-            time.sleep(1)
-            cap.release()
-            cap = cv2.VideoCapture(args.rtsp, cv2.CAP_FFMPEG)
-            continue
+            if args.video and args.loop:
+                # Restart video from beginning
+                logger.info("Reached end of video, looping...")
+                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                continue
+            elif args.video:
+                # End of video, no loop
+                logger.info("Reached end of video, stopping...")
+                break
+            else:
+                # RTSP stream failed, reconnect
+                logger.warning("Failed to read frame, reconnecting...")
+                time.sleep(1)
+                cap.release()
+                cap = cv2.VideoCapture(video_source, cv2.CAP_FFMPEG)
+                continue
 
         frame_count += 1
 
-        # Run YOLO detection
-        detections = detector.detect(frame)
+        # Skip frames for performance
+        if frame_count % args.skip_frames != 0:
+            continue
+
+        # Store original frame dimensions
+        orig_height, orig_width = frame.shape[:2]
+
+        # Apply ROI if specified
+        if roi:
+            x, y, w, h = roi
+            frame_roi = frame[y:y+h, x:x+w]
+        else:
+            frame_roi = frame
+            x, y = 0, 0
+
+        # Resize frame for detection
+        frame_resized = cv2.resize(frame_roi, (args.resize_width, args.resize_height))
+
+        # Calculate scale factors for bbox conversion
+        scale_x = frame_roi.shape[1] / args.resize_width
+        scale_y = frame_roi.shape[0] / args.resize_height
+
+        # Run YOLO detection on resized frame
+        detections = detector.detect(frame_resized)
+
+        # Scale detections back to original frame coordinates
+        for det in detections:
+            det['x'] = int(det['x'] * scale_x) + x
+            det['y'] = int(det['y'] * scale_y) + y
+            det['w'] = int(det['w'] * scale_x)
+            det['h'] = int(det['h'] * scale_y)
 
         if detections:
             detection_count += len(detections)

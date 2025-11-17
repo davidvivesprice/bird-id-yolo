@@ -8,3 +8,15 @@ share/*
 !share/index.html
 *.pyc
 __pycache__/
+
+# Runtime data
+logs-yolo/
+share-yolo/hls/
+share-yolo/detections.json
+share/
+
+# Testing data
+testing/
+
+# OS files
+.DS_Store

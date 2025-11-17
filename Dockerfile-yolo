@@ -8,17 +8,38 @@ RUN apt-get update && apt-get install -y \
     libxrender-dev \
     libgomp1 \
     git \
+    curl \
+    gnupg \
+    libusb-1.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
+# Add Coral Edge TPU repository and install runtime
+RUN curl -fsSL https://packages.cloud.google.com/apt/doc/apt-key.gpg | gpg --dearmor -o /usr/share/keyrings/coral-edgetpu-archive-keyring.gpg && \
+    echo "deb [signed-by=/usr/share/keyrings/coral-edgetpu-archive-keyring.gpg] https://packages.cloud.google.com/apt coral-edgetpu-stable main" | tee /etc/apt/sources.list.d/coral-edgetpu.list && \
+    apt-get update && \
+    apt-get install -y libedgetpu1-std && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install PyTorch CPU-only from custom index
 RUN pip install --no-cache-dir \
-    torch==2.0.1 torchvision==0.15.2 --index-url https://download.pytorch.org/whl/cpu \
+    torch==2.0.1 torchvision==0.15.2 --index-url https://download.pytorch.org/whl/cpu
+
+# Install other dependencies from PyPI (except pycoral - see below)
+RUN pip install --no-cache-dir \
     ultralytics \
     opencv-python-headless \
     fastapi \
     uvicorn \
     pyyaml \
-    numpy
+    tflite-runtime
+
+# Install official pycoral from Google (requires libedgetpu to be installed first)
+# Use --no-deps to skip tflite-runtime version check (2.14.0 is compatible with 2.5.0 API)
+RUN pip install --no-cache-dir --no-deps \
+    https://github.com/google-coral/pycoral/releases/download/v2.0.0/pycoral-2.0.0-cp39-cp39-linux_x86_64.whl
+
+# Force downgrade numpy to 1.x (ultralytics tries to upgrade to 2.x)
+RUN pip install --no-cache-dir "numpy<2.0" --force-reinstall --no-deps
 
 # Create app directory
 WORKDIR /app
