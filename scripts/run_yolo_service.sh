@@ -13,7 +13,10 @@ HLS_DIR="${HLS_DIR:-/share-yolo/hls}"
 STATUS_PORT="${STATUS_PORT:-8001}"
 LOG_DIR="${LOG_DIR:-/logs-yolo}"
 YOLO_MODEL="${YOLO_MODEL:-/data/models/yolov8n.pt}"
-TFLITE_MODEL="${TFLITE_MODEL:-/data/models/ssd_mobilenet_v2_edgetpu.tflite}"
+TFLITE_MODEL_TPU="${TFLITE_MODEL_TPU:-/data/models/ssd_mobilenet_v2_edgetpu.tflite}"
+TFLITE_MODEL_CPU="${TFLITE_MODEL_CPU:-/data/models/ssd_mobilenet_v2_coco.tflite}"
+# Use Edge TPU model (installed from Google's repo with proper versions)
+TFLITE_MODEL="$TFLITE_MODEL_TPU"
 TFLITE_LABELS="${TFLITE_LABELS:-/data/models/coco_labels.txt}"
 DETECTIONS_FILE="${DETECTIONS_FILE:-/share-yolo/detections.json}"
 TEST_VIDEO_PATH="/data/clips/testing/custom_sequence.mp4"
@@ -58,14 +61,12 @@ fi
 
 # Start HLS encoding
 if [ "$USE_VIDEO" = true ]; then
-    # Video file mode with looping - re-encode to fix stream issues
-    echo "Starting HLS with re-encoding (video file mode)..."
+    # Video file mode with looping - codec copy for low CPU usage
+    echo "Starting HLS with codec copy (video file mode)..."
     ffmpeg \
         -stream_loop -1 \
         -i "$VIDEO_SOURCE" \
-        -c:v libx264 \
-        -preset ultrafast \
-        -crf 23 \
+        -c:v copy \
         -c:a aac \
         -f hls \
         -hls_time 2 \
